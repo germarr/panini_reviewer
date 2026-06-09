@@ -43,6 +43,14 @@ def load_stamps(csv_path: Path) -> dict:
     }
 
 
+def mark_as_owned(csv_path: Path, code: str, stamps: dict) -> None:
+    """Flip LATENGO to TRUE for code in the CSV and update the in-memory dict."""
+    df = pd.read_csv(csv_path)
+    df.loc[df["STICKER_CODE"] == code, "LATENGO"] = True
+    df.to_csv(csv_path, index=False)
+    stamps[code]["owned"] = True
+
+
 def detect_code(frame: np.ndarray, reader: easyocr.Reader, stamps: dict) -> str | None:
     x1, y1, x2, y2 = roi_rect(frame)
     roi = frame[y1:y2, x1:x2]
@@ -79,8 +87,11 @@ def draw_guide(frame: np.ndarray, scanning: bool = False) -> None:
                 cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 1, cv2.LINE_AA)
 
 
-def draw_hint(frame: np.ndarray) -> None:
-    cv2.putText(frame, "ESPACIO: escanear  |  Q: salir", (10, 25),
+def draw_hint(frame: np.ndarray, can_mark: bool = False) -> None:
+    hint = "ESPACIO: escanear  |  Q: salir"
+    if can_mark:
+        hint += "  |  M: marcar como obtenido"
+    cv2.putText(frame, hint, (10, 25),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.6, (180, 180, 180), 1, cv2.LINE_AA)
 
 
@@ -131,8 +142,13 @@ def main() -> None:
         if not ret:
             break
 
+        can_mark = (
+            has_result
+            and last_code in stamps
+            and not stamps[last_code]["owned"]
+        )
         draw_guide(frame, scanning=scanning)
-        draw_hint(frame)
+        draw_hint(frame, can_mark=can_mark)
         if has_result:
             draw_result(frame, last_code, stamps)
 
@@ -150,6 +166,9 @@ def main() -> None:
             last_code = detect_code(frame, reader, stamps)
             has_result = True
             scanning = False
+        elif key == ord("m") and can_mark:
+            mark_as_owned(CSV_PATH, last_code, stamps)
+            print(f"Marcado como obtenido: {last_code}")
 
     cap.release()
     cv2.destroyAllWindows()
