@@ -1,4 +1,6 @@
+import csv
 import re
+from datetime import datetime
 from pathlib import Path
 
 import cv2
@@ -6,7 +8,8 @@ import easyocr
 import numpy as np
 import pandas as pd
 
-CSV_PATH = Path(__file__).parent / "data" / "stamps.csv"
+CSV_PATH          = Path(__file__).parent / "data" / "stamps.csv"
+REPEATED_CSV_PATH = Path(__file__).parent / "data" / "repeated.csv"
 CODE_PATTERN = re.compile(r"[A-Z]{2,4}\s?[0-9SIOZB]{1,2}")
 _DIGIT_SUBS = str.maketrans("SIOZB", "91028")
 
@@ -41,6 +44,31 @@ def load_stamps(csv_path: Path) -> dict:
         }
         for _, row in df.iterrows()
     }
+
+
+def mark_as_owned(csv_path: Path, code: str, stamps: dict) -> None:
+    """Flip LATENGO to TRUE for code in the CSV and update the in-memory dict."""
+    df = pd.read_csv(csv_path)
+    df.loc[df["STICKER_CODE"] == code, "LATENGO"] = True
+    df.to_csv(csv_path, index=False)
+    stamps[code]["owned"] = True
+
+
+def mark_as_repeated(csv_path: Path, code: str, stamps: dict) -> None:
+    """Append one repetido row to repeated.csv for the given sticker code."""
+    info = stamps[code]
+    row = {
+        "STICKER_CODE": code,
+        "TEAM": info["team"],
+        "GROUP": info["group"],
+        "TIMESTAMP": datetime.now().isoformat(timespec="seconds"),
+    }
+    write_header = not csv_path.exists() or csv_path.stat().st_size == 0
+    with csv_path.open("a", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=["STICKER_CODE", "TEAM", "GROUP", "TIMESTAMP"])
+        if write_header:
+            writer.writeheader()
+        writer.writerow(row)
 
 
 def detect_code(frame: np.ndarray, reader: easyocr.Reader, stamps: dict) -> str | None:
@@ -79,8 +107,13 @@ def draw_guide(frame: np.ndarray, scanning: bool = False) -> None:
                 cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 1, cv2.LINE_AA)
 
 
-def draw_hint(frame: np.ndarray) -> None:
-    cv2.putText(frame, "ESPACIO: escanear  |  Q: salir", (10, 25),
+def draw_hint(frame: np.ndarray, can_mark: bool = False, can_repeat: bool = False) -> None:
+    hint = "ESPACIO: escanear  |  Q: salir"
+    if can_mark:
+        hint += "  |  M: marcar como obtenido"
+    if can_repeat:
+        hint += "  |  R: marcar como repetido"
+    cv2.putText(frame, hint, (10, 25),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.6, (180, 180, 180), 1, cv2.LINE_AA)
 
 
@@ -131,8 +164,18 @@ def main() -> None:
         if not ret:
             break
 
+        can_mark = (
+            has_result
+            and last_code in stamps
+            and not stamps[last_code]["owned"]
+        )
+        can_repeat = (
+            has_result
+            and last_code in stamps
+            and stamps[last_code]["owned"]
+        )
         draw_guide(frame, scanning=scanning)
-        draw_hint(frame)
+        draw_hint(frame, can_mark=can_mark, can_repeat=can_repeat)
         if has_result:
             draw_result(frame, last_code, stamps)
 
@@ -150,6 +193,12 @@ def main() -> None:
             last_code = detect_code(frame, reader, stamps)
             has_result = True
             scanning = False
+        elif key == ord("m") and can_mark:
+            mark_as_owned(CSV_PATH, last_code, stamps)
+            print(f"Marcado como obtenido: {last_code}")
+        elif key == ord("r") and can_repeat:
+            mark_as_repeated(REPEATED_CSV_PATH, last_code, stamps)
+            print(f"Marcado como repetido: {last_code}")
 
     cap.release()
     cv2.destroyAllWindows()

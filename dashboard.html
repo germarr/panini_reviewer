@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mi Álbum Panini</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body style="background:#0f172a;color:#f1f5f9;font-family:system-ui,sans-serif" class="min-h-screen">
+
+  <div class="max-w-5xl mx-auto px-4 py-8">
+
+    <!-- Header -->
+    <div class="flex items-end justify-between mb-8">
+      <div>
+        <h1 class="text-3xl font-bold" style="color:#f8fafc">Mi Álbum Panini</h1>
+        <p class="text-sm mt-1" style="color:#64748b">FIFA World Cup 2026</p>
+      </div>
+      <button onclick="location.reload()" class="text-xs px-3 py-1.5 rounded-lg" style="background:#1e293b;color:#94a3b8;border:1px solid #334155">
+        Actualizar
+      </button>
+    </div>
+
+    <!-- Stat cards -->
+    <div class="grid grid-cols-3 gap-4 mb-5">
+      <div class="rounded-xl p-5" style="background:#1e293b">
+        <p class="text-xs uppercase tracking-wide mb-2" style="color:#64748b">Total stickers</p>
+        <p id="stat-total" class="text-3xl font-bold" style="color:#f8fafc">—</p>
+      </div>
+      <div class="rounded-xl p-5" style="background:#1e293b">
+        <p class="text-xs uppercase tracking-wide mb-2" style="color:#64748b">Tengo</p>
+        <p id="stat-owned" class="text-3xl font-bold" style="color:#22c55e">—</p>
+      </div>
+      <div class="rounded-xl p-5" style="background:#1e293b">
+        <p class="text-xs uppercase tracking-wide mb-2" style="color:#64748b">Me faltan</p>
+        <p id="stat-missing" class="text-3xl font-bold" style="color:#f43f5e">—</p>
+      </div>
+    </div>
+
+    <!-- Overall progress bar -->
+    <div class="rounded-xl p-5 mb-5" style="background:#1e293b">
+      <div class="flex justify-between text-sm mb-3" style="color:#94a3b8">
+        <span>Progreso total del álbum</span>
+        <span id="pct-label" class="font-semibold" style="color:#f8fafc">—</span>
+      </div>
+      <div class="rounded-full overflow-hidden" style="height:14px;background:#334155">
+        <div id="progress-fill" style="height:100%;width:0%;background:linear-gradient(90deg,#16a34a,#22c55e);transition:width 0.8s ease"></div>
+      </div>
+      <div class="flex justify-between text-xs mt-2" style="color:#475569">
+        <span id="owned-label">—</span>
+        <span id="missing-label">—</span>
+      </div>
+    </div>
+
+    <!-- Group chart -->
+    <div class="rounded-xl p-5 mb-5" style="background:#1e293b">
+      <h2 class="text-base font-semibold mb-4" style="color:#f8fafc">Por grupo</h2>
+      <div style="height:300px;position:relative">
+        <canvas id="groupChart"></canvas>
+      </div>
+    </div>
+
+    <!-- Team chart -->
+    <div class="rounded-xl p-5" style="background:#1e293b">
+      <h2 class="text-base font-semibold mb-1" style="color:#f8fafc">Por equipo</h2>
+      <p class="text-xs mb-4" style="color:#475569">Ordenado por grupo · cada equipo tiene 20 stickers</p>
+      <div style="overflow-y:auto;max-height:640px">
+        <canvas id="teamChart"></canvas>
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+  const FLAGS = {
+    ALG:'🇩🇿', ARG:'🇦🇷', AUS:'🇦🇺', AUT:'🇦🇹',
+    BIH:'🇧🇦', BEL:'🇧🇪', BRA:'🇧🇷', CAN:'🇨🇦',
+    CZE:'🇨🇿', CPV:'🇨🇻', COL:'🇨🇴', DFR:'🇨🇩',
+    CIV:'🇨🇮', CRO:'🇭🇷', CUW:'🇨🇼', ECU:'🇪🇨',
+    EGY:'🇪🇬', ENG:'🏴󠁧󠁢󠁥󠁮󠁧󠁿', FRA:'🇫🇷', GER:'🇩🇪',
+    GHA:'🇬🇭', HAI:'🇭🇹', IRN:'🇮🇷', IRQ:'🇮🇶',
+    JAP:'🇯🇵', JOR:'🇯🇴', MEX:'🇲🇽', MAR:'🇲🇦',
+    NED:'🇳🇱', NZL:'🇳🇿', NOR:'🇳🇴', FWC:'⭐',
+    PAN:'🇵🇦', PAR:'🇵🇾', POR:'🇵🇹', QAT:'🇶🇦',
+    RSA:'🇿🇦', KOR:'🇰🇷', SUI:'🇨🇭', KSA:'🇸🇦',
+    SCO:'🏴󠁧󠁢󠁳󠁣󠁴󠁿', SEN:'🇸🇳', ESP:'🇪🇸', SWE:'🇸🇪',
+    TUN:'🇹🇳', TUR:'🇹🇷', USA:'🇺🇸', URU:'🇺🇾',
+    UZB:'🇺🇿'
+  };
+
+  const GROUP_ORDER = [
+    'GROUP A','GROUP B','GROUP C','GROUP D','GROUP E','GROUP F',
+    'GROUP G','GROUP H','GROUP I','GROUP J','GROUP K','GROUP L','NOGROUP'
+  ];
+
+  const GROUP_LABELS = {
+    'GROUP A':'Grupo A', 'GROUP B':'Grupo B', 'GROUP C':'Grupo C',
+    'GROUP D':'Grupo D', 'GROUP E':'Grupo E', 'GROUP F':'Grupo F',
+    'GROUP G':'Grupo G', 'GROUP H':'Grupo H', 'GROUP I':'Grupo I',
+    'GROUP J':'Grupo J', 'GROUP K':'Grupo K', 'GROUP L':'Grupo L',
+    'NOGROUP':'Especial'
+  };
+
+  const C = {
+    owned:       'rgba(34,197,94,0.80)',
+    ownedBorder: 'rgb(34,197,94)',
+    missing:     'rgba(244,63,94,0.65)',
+    missingBorder:'rgb(244,63,94)',
+    grid:        'rgba(255,255,255,0.06)',
+    tick:        '#64748b'
+  };
+
+  async function parseCSV(url) {
+    const res = await fetch(url);
+    const text = await res.text();
+    const lines = text.trim().split('\n');
+    const keys = lines[0].split(',').map(k => k.trim());
+    return lines.slice(1).map(line => {
+      const vals = line.split(',');
+      return Object.fromEntries(keys.map((k, i) => [k, (vals[i] ?? '').trim()]));
+    });
+  }
+
+  function computeStats(stickers) {
+    const total = stickers.length;
+    const owned = stickers.filter(s => s.LATENGO.toLowerCase() === 'true').length;
+    const missing = total - owned;
+
+    const teamMap = {};
+    const groupMap = {};
+
+    for (const s of stickers) {
+      const isOwned = s.LATENGO.toLowerCase() === 'true';
+
+      if (!teamMap[s.TEAM]) {
+        teamMap[s.TEAM] = { team: s.TEAM, iso: s.ISOALPHA3, group: s.GROUP, owned: 0, missing: 0 };
+      }
+      isOwned ? teamMap[s.TEAM].owned++ : teamMap[s.TEAM].missing++;
+
+      if (!groupMap[s.GROUP]) groupMap[s.GROUP] = { owned: 0, missing: 0 };
+      isOwned ? groupMap[s.GROUP].owned++ : groupMap[s.GROUP].missing++;
+    }
+
+    const teams = Object.values(teamMap).sort((a, b) => {
+      const gi = GROUP_ORDER.indexOf(a.group) - GROUP_ORDER.indexOf(b.group);
+      return gi !== 0 ? gi : a.team.localeCompare(b.team);
+    });
+
+    return { total, owned, missing, teams, groupMap };
+  }
+
+  function renderGroupChart(groupMap) {
+    const groups = GROUP_ORDER.filter(g => groupMap[g]);
+    const labels = groups.map(g => GROUP_LABELS[g] ?? g);
+
+    new Chart(document.getElementById('groupChart'), {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [
+          {
+            label: 'Tengo',
+            data: groups.map(g => groupMap[g].owned),
+            backgroundColor: C.owned,
+            borderColor: C.ownedBorder,
+            borderWidth: 1,
+            stack: 's'
+          },
+          {
+            label: 'Me falta',
+            data: groups.map(g => groupMap[g].missing),
+            backgroundColor: C.missing,
+            borderColor: C.missingBorder,
+            borderWidth: 1,
+            stack: 's'
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            labels: { color: C.tick, font: { size: 12 }, boxWidth: 12 }
+          },
+          tooltip: {
+            callbacks: {
+              afterBody(items) {
+                const g = groups[items[0].dataIndex];
+                const { owned, missing } = groupMap[g];
+                const pct = Math.round(owned / (owned + missing) * 100);
+                return [`Completado: ${pct}%`];
+              }
+            }
+          }
+        },
+        scales: {
+          x: { stacked: true, ticks: { color: C.tick }, grid: { color: C.grid } },
+          y: { stacked: true, ticks: { color: C.tick }, grid: { color: C.grid } }
+        }
+      }
+    });
+  }
+
+  function renderTeamChart(teams) {
+    const BAR = 26;
+    const canvas = document.getElementById('teamChart');
+    const containerWidth = canvas.parentElement.clientWidth;
+    canvas.width  = containerWidth;
+    canvas.height = teams.length * BAR + 20;
+
+    const labels = teams.map(t => `${FLAGS[t.iso] ?? ''} ${t.team}`);
+
+    new Chart(canvas, {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [
+          {
+            label: 'Tengo',
+            data: teams.map(t => t.owned),
+            backgroundColor: C.owned,
+            borderColor: C.ownedBorder,
+            borderWidth: 1,
+            stack: 's'
+          },
+          {
+            label: 'Me falta',
+            data: teams.map(t => t.missing),
+            backgroundColor: C.missing,
+            borderColor: C.missingBorder,
+            borderWidth: 1,
+            stack: 's'
+          }
+        ]
+      },
+      options: {
+        indexAxis: 'y',
+        responsive: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              title: items => labels[items[0].dataIndex],
+              afterBody(items) {
+                const t = teams[items[0].dataIndex];
+                const pct = Math.round(t.owned / (t.owned + t.missing) * 100);
+                return [`Tengo: ${t.owned}  |  Faltan: ${t.missing}  |  ${pct}% completo`];
+              }
+            }
+          }
+        },
+        scales: {
+          x: {
+            stacked: true,
+            max: 20,
+            ticks: { color: C.tick, stepSize: 5 },
+            grid: { color: C.grid }
+          },
+          y: {
+            stacked: true,
+            ticks: { color: '#94a3b8', font: { size: 12 } },
+            grid: { color: C.grid }
+          }
+        }
+      }
+    });
+  }
+
+  async function main() {
+    const stickers = await parseCSV('data/stamps.csv');
+    const { total, owned, missing, teams, groupMap } = computeStats(stickers);
+
+    document.getElementById('stat-total').textContent   = total;
+    document.getElementById('stat-owned').textContent   = owned;
+    document.getElementById('stat-missing').textContent = missing;
+
+    const pct = Math.round(owned / total * 100);
+    document.getElementById('pct-label').textContent    = `${pct}%`;
+    document.getElementById('owned-label').textContent  = `${owned} conseguidos`;
+    document.getElementById('missing-label').textContent = `${missing} pendientes`;
+
+    requestAnimationFrame(() => {
+      document.getElementById('progress-fill').style.width = `${pct}%`;
+    });
+
+    renderGroupChart(groupMap);
+    renderTeamChart(teams);
+  }
+
+  main().catch(err => {
+    document.body.innerHTML = `<div style="padding:2rem;color:#f43f5e">
+      Error al cargar datos: ${err.message}<br>
+      <small style="color:#64748b">Ejecuta: python -m http.server 8000 desde la raíz del proyecto</small>
+    </div>`;
+  });
+  </script>
+
+</body>
+</html>
